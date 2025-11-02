@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"go-backend-valos-id/core/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type UserHandler struct {
@@ -65,6 +67,21 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 
 	if err := h.userRepo.CreateUser(user); err != nil {
+		// Check for unique constraint violation
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			if pgErr.ConstraintName == "users_email_unique" || pgErr.ConstraintName == "users_email_key" {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "User with this email already exists",
+				})
+				return
+			}
+			if pgErr.ConstraintName == "users_username_unique" || pgErr.ConstraintName == "users_username_key" {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "User with this username already exists",
+				})
+				return
+			}
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to create user",
 		})
@@ -110,7 +127,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 
 	user, err := h.userRepo.GetUserByID(userID)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "User not found",
 			})
@@ -140,7 +157,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	// Check if user exists first
 	_, err = h.userRepo.GetUserByID(userID)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "User not found",
 			})
@@ -172,6 +189,21 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if err := h.userRepo.UpdateUser(user); err != nil {
+		// Check for unique constraint violation
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			if pgErr.ConstraintName == "users_email_unique" || pgErr.ConstraintName == "users_email_key" {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "User with this email already exists",
+				})
+				return
+			}
+			if pgErr.ConstraintName == "users_username_unique" || pgErr.ConstraintName == "users_username_key" {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "User with this username already exists",
+				})
+				return
+			}
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update user",
 		})
@@ -195,7 +227,9 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.userRepo.DeleteUser(userID); err != nil {
-		if err.Error() == "user not found" {
+		// sqlc DeleteUser doesn't return an error for no rows affected
+		// We need to check if the user exists first
+		if _, checkErr := h.userRepo.GetUserByID(userID); checkErr == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "User not found",
 			})
@@ -230,7 +264,7 @@ func (h *UserHandler) GetUsersWithPagination(c *gin.Context) {
 		return
 	}
 
-	users, err := h.userRepo.GetUsersWithPagination(limit, offset)
+	users, err := h.userRepo.GetUsersWithPagination(int32(limit), int32(offset))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to retrieve users",
@@ -263,7 +297,7 @@ func (h *UserHandler) GetUsersWithPagination(c *gin.Context) {
 
 // Helper methods
 
-func (h *UserHandler) parseUserID(idStr string) (int, error) {
+func (h *UserHandler) parseUserID(idStr string) (int32, error) {
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		return 0, fmt.Errorf("invalid user ID")
@@ -271,7 +305,7 @@ func (h *UserHandler) parseUserID(idStr string) (int, error) {
 	if id <= 0 {
 		return 0, fmt.Errorf("user ID must be positive")
 	}
-	return id, nil
+	return int32(id), nil
 }
 
 func (h *UserHandler) parseIntQuery(value string, defaultValue, min, max int) (int, error) {

@@ -1,20 +1,20 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
-	"go-backend-valos-id/core/db"
-
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type HealthHandler struct {
-	database *db.Database
+	pool *pgxpool.Pool
 }
 
-func NewHealthHandler(database *db.Database) *HealthHandler {
+func NewHealthHandler(pool *pgxpool.Pool) *HealthHandler {
 	return &HealthHandler{
-		database: database,
+		pool: pool,
 	}
 }
 
@@ -32,7 +32,7 @@ func (h *HealthHandler) HealthCheck(c *gin.Context) {
 	}
 
 	// Check database health
-	if err := h.database.Health(); err != nil {
+	if err := h.pool.Ping(context.Background()); err != nil {
 		status["status"] = "unhealthy"
 		status["database"] = gin.H{
 			"status": "disconnected",
@@ -51,7 +51,7 @@ func (h *HealthHandler) HealthCheck(c *gin.Context) {
 
 // Readiness check for Kubernetes/containers
 func (h *HealthHandler) Readiness(c *gin.Context) {
-	if err := h.database.Health(); err != nil {
+	if err := h.pool.Ping(context.Background()); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"ready": false,
 			"error": "database not ready",

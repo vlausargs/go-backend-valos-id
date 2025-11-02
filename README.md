@@ -1,11 +1,12 @@
-# Go Backend with SQLx
+# Go Backend with SQLc
 
-This is a Go backend application using Gin framework with SQLx for database operations, following clean architecture principles.
+This is a Go backend application using Gin framework with SQLc and pgx for database operations, following clean architecture principles.
 
 ## Features
 
 - RESTful API with Gin framework
-- SQLx for database operations with PostgreSQL
+- SQLc for type-safe database operations with PostgreSQL
+- pgx/v5 for high-performance PostgreSQL driver
 - Clean architecture with separation of concerns
 - User CRUD operations with repository pattern
 - Pagination support
@@ -156,7 +157,7 @@ curl http://localhost:3210/health
 - Connection string builder with default values
 
 ### Database Layer (`core/db/`)
-- SQLx connection management
+- pgx/v5 connection pool management
 - Connection pooling configuration
 - Health check functionality
 
@@ -173,8 +174,8 @@ curl http://localhost:3210/health
 - Logging
 
 ### Models Layer (`core/models/`)
-- Data structures with SQLx tags
-- Repository pattern implementation
+- Data structures with JSON tags
+- Repository pattern implementation using SQLc generated code
 - Database operations abstraction
 
 ### Server Layer (`core/server/`)
@@ -182,14 +183,16 @@ curl http://localhost:3210/health
 - Route configuration
 - Graceful shutdown handling
 
-## SQLx Features Used
+## SQLc + pgx Features Used
 
-- Named queries and parameter binding
-- Struct scanning with `db` tags
-- Connection pooling
-- Transaction support
-- Query logging
-- Prepared statements
+- Type-safe SQL queries with SQLc
+- Compile-time query validation
+- Auto-generated Go code from SQL
+- Type-safe parameters and results
+- High-performance pgx/v5 connection pooling
+- Transaction support with pgx
+- PostgreSQL-specific features support
+- Optimized query performance
 
 ## Security Features
 
@@ -203,7 +206,7 @@ curl http://localhost:3210/health
 - Connection pooling
 - Database indexes
 - Pagination support
-- Efficient struct scanning
+- Type-safe compiled queries
 
 ## Development
 

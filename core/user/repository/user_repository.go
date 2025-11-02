@@ -1,82 +1,134 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
-	"fmt"
 	"time"
 
+	"go-backend-valos-id/core/internal/repository"
 	"go-backend-valos-id/core/user/model"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserRepository struct {
-	db *sqlx.DB
+	pool    *pgxpool.Pool
+	queries *repository.Queries
 }
 
-func NewUserRepository(db *sqlx.DB) *UserRepository {
-	return &UserRepository{db: db}
+func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
+	return &UserRepository{
+		pool:    pool,
+		queries: repository.New(pool),
+	}
 }
 
 // CreateUser creates a new user in the database
 func (r *UserRepository) CreateUser(user *model.User) error {
-	query := `
-		INSERT INTO users (username, email, password, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`
-
+	ctx := context.Background()
 	now := time.Now()
+
+	// Convert time.Time to pgtype.Timestamptz for pgx
+	timestamptz := pgtype.Timestamptz{
+		Time:  now,
+		Valid: true,
+	}
+
+	params := repository.CreateUserParams{
+		Username:  user.Username,
+		Email:     user.Email,
+		Password:  user.Password,
+		CreatedAt: timestamptz,
+		UpdatedAt: timestamptz,
+	}
+
+	result, err := r.queries.CreateUser(ctx, params)
+	if err != nil {
+		// Check for unique constraint violation
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			if pgErr.ConstraintName == "users_email_unique" || pgErr.ConstraintName == "users_email_key" {
+				return &pgconn.PgError{
+					Code:    "23505",
+					Message: "user with this email already exists",
+				}
+			}
+			if pgErr.ConstraintName == "users_username_unique" || pgErr.ConstraintName == "users_username_key" {
+				return &pgconn.PgError{
+					Code:    "23505",
+					Message: "user with this username already exists",
+				}
+			}
+		}
+		return err
+	}
+
+	user.ID = result.ID
 	user.CreatedAt = now
 	user.UpdatedAt = now
-
-	err := r.db.QueryRow(query, user.Username, user.Email, user.Password, now, now).Scan(&user.ID)
-	if err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
-	}
 
 	return nil
 }
 
 // GetUserByID retrieves a user by their ID
-func (r *UserRepository) GetUserByID(id int) (*model.User, error) {
-	user := &model.User{}
-	query := `SELECT id, username, email, password, created_at, updated_at FROM users WHERE id = $1`
+func (r *UserRepository) GetUserByID(id int32) (*model.User, error) {
+	ctx := context.Background()
 
-	err := r.db.Get(user, query, id)
+	result, err := r.queries.GetUserByID(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
+			return nil, sql.ErrNoRows
 		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
 
-	return user, nil
+	return r.sqlcUserToModelUser(&result), nil
 }
 
 // GetUserByEmail retrieves a user by their email
 func (r *UserRepository) GetUserByEmail(email string) (*model.User, error) {
-	user := &model.User{}
-	query := `SELECT id, username, email, password, created_at, updated_at FROM users WHERE email = $1`
+	ctx := context.Background()
 
-	err := r.db.Get(user, query, email)
+	result, err := r.queries.GetUserByEmail(ctx, email)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
+			return nil, sql.ErrNoRows
 		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
 
-	return user, nil
+	return r.sqlcUserToModelUser(&result), nil
 }
 
 // GetAllUsers retrieves all users from the database
 func (r *UserRepository) GetAllUsers() ([]model.User, error) {
-	var users []model.User
-	query := `SELECT id, username, email, created_at, updated_at FROM users ORDER BY created_at DESC`
+	ctx := context.Background()
 
-	err := r.db.Select(&users, query)
+	results, err := r.queries.GetAllUsers(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get all users: %w", err)
+		return nil, err
+	}
+
+	users := make([]model.User, len(results))
+	for i, result := range results {
+		createdAt := time.Time{}
+		if result.CreatedAt.Valid {
+			createdAt = result.CreatedAt.Time
+		}
+
+		updatedAt := time.Time{}
+		if result.UpdatedAt.Valid {
+			updatedAt = result.UpdatedAt.Time
+		}
+
+		users[i] = model.User{
+			ID:        result.ID,
+			Username:  result.Username,
+			Email:     result.Email,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		}
 	}
 
 	return users, nil
@@ -84,67 +136,78 @@ func (r *UserRepository) GetAllUsers() ([]model.User, error) {
 
 // UpdateUser updates an existing user
 func (r *UserRepository) UpdateUser(user *model.User) error {
-	query := `
-		UPDATE users
-		SET username = $2, email = $3, updated_at = $4
-		WHERE id = $1`
+	ctx := context.Background()
+	now := time.Now()
 
-	user.UpdatedAt = time.Now()
+	// Convert time.Time to pgtype.Timestamptz for pgx
+	timestamptz := pgtype.Timestamptz{
+		Time:  now,
+		Valid: true,
+	}
 
-	result, err := r.db.Exec(query, user.ID, user.Username, user.Email, user.UpdatedAt)
+	params := repository.UpdateUserParams{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		UpdatedAt: timestamptz,
+	}
+
+	err := r.queries.UpdateUser(ctx, params)
 	if err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
+		// Check for unique constraint violation
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			if pgErr.ConstraintName == "users_email_unique" || pgErr.ConstraintName == "users_email_key" {
+				return &pgconn.PgError{
+					Code:    "23505",
+					Message: "user with this email already exists",
+				}
+			}
+			if pgErr.ConstraintName == "users_username_unique" || pgErr.ConstraintName == "users_username_key" {
+				return &pgconn.PgError{
+					Code:    "23505",
+					Message: "user with this username already exists",
+				}
+			}
+		}
+		return err
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("user not found")
-	}
-
+	user.UpdatedAt = now
 	return nil
 }
 
 // UpdatePassword updates a user's password
-func (r *UserRepository) UpdatePassword(userID int, hashedPassword string) error {
-	query := `UPDATE users SET password = $2, updated_at = $3 WHERE id = $1`
+func (r *UserRepository) UpdatePassword(userID int32, hashedPassword string) error {
+	ctx := context.Background()
+	now := time.Now()
 
-	result, err := r.db.Exec(query, userID, hashedPassword, time.Now())
-	if err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
+	// Convert time.Time to pgtype.Timestamptz for pgx
+	timestamptz := pgtype.Timestamptz{
+		Time:  now,
+		Valid: true,
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
+	params := repository.UpdatePasswordParams{
+		ID:        userID,
+		Password:  hashedPassword,
+		UpdatedAt: timestamptz,
 	}
 
-	if rowsAffected == 0 {
-		return fmt.Errorf("user not found")
+	err := r.queries.UpdatePassword(ctx, params)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 // DeleteUser deletes a user by their ID
-func (r *UserRepository) DeleteUser(id int) error {
-	query := `DELETE FROM users WHERE id = $1`
+func (r *UserRepository) DeleteUser(id int32) error {
+	ctx := context.Background()
 
-	result, err := r.db.Exec(query, id)
+	err := r.queries.DeleteUser(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete user: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("user not found")
+		return err
 	}
 
 	return nil
@@ -152,29 +215,49 @@ func (r *UserRepository) DeleteUser(id int) error {
 
 // UserExists checks if a user exists by email
 func (r *UserRepository) UserExists(email string) (bool, error) {
-	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`
+	ctx := context.Background()
 
-	err := r.db.Get(&exists, query, email)
+	exists, err := r.queries.UserExists(ctx, email)
 	if err != nil {
-		return false, fmt.Errorf("failed to check if user exists: %w", err)
+		return false, err
 	}
 
 	return exists, nil
 }
 
 // GetUsersWithPagination retrieves users with pagination
-func (r *UserRepository) GetUsersWithPagination(limit, offset int) ([]model.User, error) {
-	var users []model.User
-	query := `
-		SELECT id, username, email, created_at, updated_at
-		FROM users
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2`
+func (r *UserRepository) GetUsersWithPagination(limit, offset int32) ([]model.User, error) {
+	ctx := context.Background()
 
-	err := r.db.Select(&users, query, limit, offset)
+	params := repository.GetUsersWithPaginationParams{
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	results, err := r.queries.GetUsersWithPagination(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get users with pagination: %w", err)
+		return nil, err
+	}
+
+	users := make([]model.User, len(results))
+	for i, result := range results {
+		createdAt := time.Time{}
+		if result.CreatedAt.Valid {
+			createdAt = result.CreatedAt.Time
+		}
+
+		updatedAt := time.Time{}
+		if result.UpdatedAt.Valid {
+			updatedAt = result.UpdatedAt.Time
+		}
+
+		users[i] = model.User{
+			ID:        result.ID,
+			Username:  result.Username,
+			Email:     result.Email,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		}
 	}
 
 	return users, nil
@@ -182,13 +265,34 @@ func (r *UserRepository) GetUsersWithPagination(limit, offset int) ([]model.User
 
 // CountUsers returns the total number of users
 func (r *UserRepository) CountUsers() (int, error) {
-	var count int
-	query := `SELECT COUNT(*) FROM users`
+	ctx := context.Background()
 
-	err := r.db.Get(&count, query)
+	count, err := r.queries.CountUsers(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count users: %w", err)
+		return 0, err
 	}
 
-	return count, nil
+	return int(count), nil
+}
+
+// Helper method to convert sqlc User to model User
+func (r *UserRepository) sqlcUserToModelUser(sqlcUser *repository.User) *model.User {
+	createdAt := time.Time{}
+	if sqlcUser.CreatedAt.Valid {
+		createdAt = sqlcUser.CreatedAt.Time
+	}
+
+	updatedAt := time.Time{}
+	if sqlcUser.UpdatedAt.Valid {
+		updatedAt = sqlcUser.UpdatedAt.Time
+	}
+
+	return &model.User{
+		ID:        sqlcUser.ID,
+		Username:  sqlcUser.Username,
+		Email:     sqlcUser.Email,
+		Password:  sqlcUser.Password,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}
 }

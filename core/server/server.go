@@ -13,6 +13,7 @@ import (
 	user_repository "go-backend-valos-id/core/user/repository"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Pre-computed method order for fastest comparison
@@ -28,9 +29,10 @@ var methodOrder = map[string]int{
 
 type Server struct {
 	router        *gin.Engine
-	db            *db.Database
+	pool          *pgxpool.Pool
 	healthHandler *handlers.HealthHandler
 	userHandler   *user_handler.UserHandler
+	database      *db.Database // Keep reference for cleanup
 }
 
 func NewServer() *Server {
@@ -46,13 +48,14 @@ func (s *Server) Initialize() error {
 	if err != nil {
 		return err
 	}
-	s.db = database
+	s.pool = database.Pool
+	s.database = database // Keep reference for cleanup
 
 	// Initialize repositories
-	userRepo := user_repository.NewUserRepository(s.db.DB)
+	userRepo := user_repository.NewUserRepository(s.pool)
 
 	// Initialize handlers
-	s.healthHandler = handlers.NewHealthHandler(s.db)
+	s.healthHandler = handlers.NewHealthHandler(s.pool)
 	s.userHandler = user_handler.NewUserHandler(userRepo)
 
 	// Setup router
@@ -111,8 +114,8 @@ func (s *Server) Start(addr string) error {
 }
 
 func (s *Server) Close() error {
-	if s.db != nil {
-		return s.db.Close()
+	if s.database != nil {
+		return s.database.Close()
 	}
 	return nil
 }

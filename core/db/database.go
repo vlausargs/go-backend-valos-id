@@ -1,50 +1,53 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
 
 	"go-backend-valos-id/core/config"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Database struct {
-	DB *sqlx.DB
+	Pool *pgxpool.Pool
 }
 
 func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 	connStr := cfg.GetConnectionString()
 
-	db, err := sqlx.Connect("postgres", connStr)
+	pool, err := pgxpool.New(context.Background(), connStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
 	// Configure connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(25)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	pool.Config().MaxConns = 25
+	pool.Config().MinConns = 5
+	pool.Config().MaxConnLifetime = 5 * time.Minute
+	pool.Config().MaxConnIdleTime = 2 * time.Minute
+	pool.Config().HealthCheckPeriod = 1 * time.Minute
 
 	// Test the connection
-	if err := db.Ping(); err != nil {
+	if err := pool.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	log.Println("Successfully connected to database")
-	return &Database{DB: db}, nil
+	return &Database{Pool: pool}, nil
 }
 
 func (d *Database) Close() error {
-	if d.DB != nil {
-		return d.DB.Close()
+	if d.Pool != nil {
+		d.Pool.Close()
+		log.Println("Database connection pool closed")
 	}
 	return nil
 }
 
 // Health check method
 func (d *Database) Health() error {
-	return d.DB.Ping()
+	return d.Pool.Ping(context.Background())
 }
