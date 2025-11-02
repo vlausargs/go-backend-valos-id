@@ -1,15 +1,32 @@
 package main
 
-import "github.com/gin-gonic/gin"
+import (
+	"log"
+	"os"
+
+	"go-backend-valos-id/core/server"
+)
 
 func main() {
+	app := server.NewApp()
 
-	router := gin.Default()
-	router.Use(gin.Logger())
-	router.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
-		})
-	})
-	router.Run() // listens on 0.0.0.0:8080 by default
+	if err := app.Initialize(); err != nil {
+		log.Fatalf("Failed to initialize application: %v", err)
+		os.Exit(1)
+	}
+
+	addr := getServerAddr()
+	log.Printf("Starting server on %s", addr)
+
+	if err := app.Run(addr); err != nil {
+		log.Fatalf("Failed to run application: %v", err)
+		os.Exit(1)
+	}
+}
+
+func getServerAddr() string {
+	if port := os.Getenv("SERVER_PORT"); port != "" {
+		return ":" + port
+	}
+	return ":3210"
 }
