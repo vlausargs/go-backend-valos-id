@@ -29,11 +29,11 @@ RETURNING id, username, email, password, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	Username  string             `json:"username"`
-	Email     string             `json:"email"`
-	Password  string             `json:"password"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Username  string      `json:"username"`
+	Email     string      `json:"email"`
+	Password  string      `json:"password"`
+	CreatedAt pgtype.Int8 `json:"created_at"`
+	UpdatedAt pgtype.Int8 `json:"updated_at"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -72,11 +72,11 @@ ORDER BY created_at DESC
 `
 
 type GetAllUsersRow struct {
-	ID        int32              `json:"id"`
-	Username  string             `json:"username"`
-	Email     string             `json:"email"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        int32       `json:"id"`
+	Username  string      `json:"username"`
+	Email     string      `json:"email"`
+	CreatedAt pgtype.Int8 `json:"created_at"`
+	UpdatedAt pgtype.Int8 `json:"updated_at"`
 }
 
 func (q *Queries) GetAllUsers(ctx context.Context) ([]GetAllUsersRow, error) {
@@ -158,11 +158,11 @@ type GetUsersWithPaginationParams struct {
 }
 
 type GetUsersWithPaginationRow struct {
-	ID        int32              `json:"id"`
-	Username  string             `json:"username"`
-	Email     string             `json:"email"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        int32       `json:"id"`
+	Username  string      `json:"username"`
+	Email     string      `json:"email"`
+	CreatedAt pgtype.Int8 `json:"created_at"`
+	UpdatedAt pgtype.Int8 `json:"updated_at"`
 }
 
 func (q *Queries) GetUsersWithPagination(ctx context.Context, arg GetUsersWithPaginationParams) ([]GetUsersWithPaginationRow, error) {
@@ -198,9 +198,9 @@ WHERE id = $1
 `
 
 type UpdatePasswordParams struct {
-	ID        int32              `json:"id"`
-	Password  string             `json:"password"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        int32       `json:"id"`
+	Password  string      `json:"password"`
+	UpdatedAt pgtype.Int8 `json:"updated_at"`
 }
 
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
@@ -215,10 +215,10 @@ WHERE id = $1
 `
 
 type UpdateUserParams struct {
-	ID        int32              `json:"id"`
-	Username  string             `json:"username"`
-	Email     string             `json:"email"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        int32       `json:"id"`
+	Username  string      `json:"username"`
+	Email     string      `json:"email"`
+	UpdatedAt pgtype.Int8 `json:"updated_at"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {

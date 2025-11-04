@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL UNIQUE,
     email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at int8 DEFAULT FLOOR(EXTRACT (EPOCH FROM now())*1000),
+    updated_at int8 DEFAULT FLOOR(EXTRACT (EPOCH FROM now())*1000)
 );
 
 -- Create indexes for better performance
@@ -17,7 +17,7 @@ CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
+    NEW.updated_at = FLOOR(EXTRACT (EPOCH FROM now())*1000);
     RETURN NEW;
 END;
 $$ language 'plpgsql';
